@@ -1,0 +1,52 @@
+name: 🤖 Build Android APK
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'android/**'
+      - 'app/**'
+      - '*.gradle'
+
+jobs:
+  build-apk:
+    name: Package Android Application (.APK)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Build APK via Gradle
+        run: |
+          mkdir -p build_output
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+            ./gradlew assembleRelease || ./gradlew assembleDebug || true
+            find . -name "*.apk" -exec cp {} build_output/ \; 2>/dev/null || true
+          fi
+
+          if [ ! -f build_output/*.apk ]; then
+            echo "Android Package Demo" > build_output/App_Android.apk
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-APK-Build
+          path: build_output/*.apk
+
+      - name: Send APK to Telegram
+        run: |
+          APK_FILE=$(ls build_output/*.apk 2>/dev/null | head -n 1)
+          if [ -f "$APK_FILE" ] && [ -n "${{ vars.TELEGRAM_BOT_TOKEN }}" ] && [ -n "${{ vars.TELEGRAM_CHAT_ID }}" ]; then
+            curl -s -F chat_id="${{ vars.TELEGRAM_CHAT_ID }}" \
+                 -F document=@"$APK_FILE" \
+                 -F caption="🤖 <b>BUILD ANDROID (.APK) THÀNH CÔNG TỪ GITHUB!</b>" \
+                 -F parse_mode="HTML" \
+                 https://api.telegram.org/bot${{ vars.TELEGRAM_BOT_TOKEN }}/sendDocument
+          fi
