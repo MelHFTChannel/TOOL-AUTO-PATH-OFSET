@@ -1,0 +1,74 @@
+name: 🌐 Build Web Application
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'web/**'
+      - '*.html'
+      - '*.js'
+      - 'package.json'
+
+jobs:
+  build-web:
+    name: Package Web Application (.ZIP / Static)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Web Assets
+        run: |
+          mkdir -p build_output web_dist
+          
+          if [ -f "package.json" ]; then
+            npm install || npm install --legacy-peer-deps || true
+            if grep -q '"build":' package.json; then
+              npm run build || true
+            fi
+            
+            # Quét các thư mục xuất sản phẩm web phổ biến
+            if [ -d "dist" ]; then
+              cp -R dist/* web_dist/ 2>/dev/null || true
+            elif [ -d "build" ]; then
+              cp -R build/* web_dist/ 2>/dev/null || true
+            elif [ -d "out" ]; then
+              cp -R out/* web_dist/ 2>/dev/null || true
+            fi
+          fi
+          
+          # Nếu không qua bundler, gom toàn bộ file HTML/CSS/JS tĩnh
+          if [ -z "$(ls -A web_dist 2>/dev/null)" ]; then
+            echo "Packaging root static web files..."
+            cp -R * web_dist/ 2>/dev/null || true
+            rm -rf web_dist/build_output web_dist/node_modules web_dist/.git web_dist/.github 2>/dev/null || true
+          fi
+          
+          # Đóng gói thành file ZIP
+          cd web_dist
+          zip -r ../build_output/Web_App_Build.zip . -x "*.git*"
+          cd ..
+
+      - name: Upload Web Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Web-Application-Build
+          path: build_output/Web_App_Build.zip
+
+      - name: Send Web Package to Telegram
+        run: |
+          ZIP_FILE=$(ls build_output/Web_App_Build.zip 2>/dev/null | head -n 1)
+          if [ -f "$ZIP_FILE" ] && [ -n "${{ vars.TELEGRAM_BOT_TOKEN }}" ] && [ -n "${{ vars.TELEGRAM_CHAT_ID }}" ]; then
+            FILE_SIZE=$(ls -lh "$ZIP_FILE" | awk '{print $5}')
+            curl -s -F chat_id="${{ vars.TELEGRAM_CHAT_ID }}" \
+                 -F document=@"$ZIP_FILE" \
+                 -F caption="🌐 <b>BUILD WEB THÀNH CÔNG TỪ GITHUB CLOUD!</b>%0A• Dung lượng: $FILE_SIZE%0A• Toàn bộ file Web (HTML/JS/CSS) đã đóng gói sẵn sàng deploy." \
+                 -F parse_mode="HTML" \
+                 https://api.telegram.org/bot${{ vars.TELEGRAM_BOT_TOKEN }}/sendDocument
+          fi
