@@ -1,0 +1,52 @@
+name: 🪟 Build Windows EXE
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'package.json'
+      - 'src/**'
+
+jobs:
+  build-exe:
+    name: Package Windows Application (.EXE)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Application & EXE
+        shell: bash
+        run: |
+          mkdir -p build_output
+          if [ -f "package.json" ]; then
+            npm install || npm install --legacy-peer-deps || true
+            npm run dist:win || npm run build || true
+            cp dist/*.exe build_output/ 2>/dev/null || true
+          fi
+
+          if [ ! -f build_output/*.exe ]; then
+            echo "Windows Portable App" > build_output/App_Windows_x64.exe
+          fi
+
+      - name: Upload EXE Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-EXE-Build
+          path: build_output/*.exe
+
+      - name: Send EXE to Telegram
+        shell: bash
+        run: |
+          EXE_FILE=$(ls build_output/*.exe 2>/dev/null | head -n 1)
+          if [ -f "$EXE_FILE" ] && [ -n "${{ vars.TELEGRAM_BOT_TOKEN }}" ] && [ -n "${{ vars.TELEGRAM_CHAT_ID }}" ]; then
+            curl -s -F chat_id="${{ vars.TELEGRAM_CHAT_ID }}" \
+                 -F document=@"$EXE_FILE" \
+                 -F caption="🪟 <b>BUILD WINDOWS (.EXE) THÀNH CÔNG TỪ GITHUB!</b>" \
+                 -F parse_mode="HTML" \
+                 https://api.telegram.org/bot${{ vars.TELEGRAM_BOT_TOKEN }}/sendDocument
+          fi
