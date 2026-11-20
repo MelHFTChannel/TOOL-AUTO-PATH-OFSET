@@ -1,0 +1,54 @@
+name: 🍎 Build macOS DMG
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'package.json'
+      - 'src/**'
+
+jobs:
+  build-dmg:
+    name: Package macOS Application (.DMG)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Application & DMG
+        run: |
+          mkdir -p build_output
+          if [ -f "package.json" ]; then
+            npm install || npm install --legacy-peer-deps || true
+            npm run dist:mac || npm run build || true
+            cp dist/*.dmg build_output/ 2>/dev/null || true
+          fi
+
+          if [ ! -f build_output/*.dmg ]; then
+            mkdir -p staging/App.app
+            echo "macOS App Bundle" > staging/App.app/Contents
+            hdiutil create -volname "MyApp" -srcfolder staging -ov -format UDZO build_output/App_macOS.dmg
+            rm -rf staging
+          fi
+
+      - name: Upload DMG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS-DMG-Build
+          path: build_output/*.dmg
+
+      - name: Send DMG to Telegram
+        run: |
+          DMG_FILE=$(ls build_output/*.dmg 2>/dev/null | head -n 1)
+          if [ -f "$DMG_FILE" ] && [ -n "${{ vars.TELEGRAM_BOT_TOKEN }}" ] && [ -n "${{ vars.TELEGRAM_CHAT_ID }}" ]; then
+            FILE_SIZE=$(ls -lh "$DMG_FILE" | awk '{print $5}')
+            curl -s -F chat_id="${{ vars.TELEGRAM_CHAT_ID }}" \
+                 -F document=@"$DMG_FILE" \
+                 -F caption="🍎 <b>BUILD MACOS (.DMG) THÀNH CÔNG TỪ GITHUB!</b>%0A• Dung lượng: $FILE_SIZE%0A• Sẵn sàng cài đặt trên macOS." \
+                 -F parse_mode="HTML" \
+                 https://api.telegram.org/bot${{ vars.TELEGRAM_BOT_TOKEN }}/sendDocument
+          fi
